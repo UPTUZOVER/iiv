@@ -1,0 +1,29 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# IDE fayllari (PyCharm, VSCode)
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# OS fayllari
+.DS_Store
+Thumbs.db
+
+# Secrets / keys
+.env
+sfd.py
+.env
+__pycache__/
+media/
+
+db.sqlite3
+
