@@ -433,21 +433,28 @@ class SectionOneViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def submit_quiz(self, request, pk=None):
-        """Quiz javoblarini qabul qilish, ball hisoblash va natijani saqlash"""
         section = self.get_object()
 
-        # ✅ TO'G'RI: OneToOneField uchun related_name='quiz' bo'lsa
-        quiz = section.quiz  # section.quiz_set emas, section.quiz
+        # ✅ quiz_id ixtiyoriy (frontend yubormasa ham ishlaydi)
+        quiz_id = request.data.get("quiz_id")
 
-        if not quiz:
-            return Response({"detail": "Quiz mavjud emas"}, status=status.HTTP_404_NOT_FOUND)
+        if quiz_id:
+            # Agar frontend yuborsa — sectionga tegishliligini tekshiramiz
+            try:
+                quiz = Quiz.objects.get(id=quiz_id, section=section)
+            except Quiz.DoesNotExist:
+                return Response({"error": "Quiz bu sectionga tegishli emas"}, status=404)
+        else:
+            # ✅ yubormasa — OneToOne bo'lgani uchun sectiondan topamiz
+            quiz = Quiz.objects.filter(section=section).first()
+            if not quiz:
+                return Response({"detail": "Quiz mavjud emas"}, status=status.HTTP_404_NOT_FOUND)
 
         # Video progresslarni tekshirish
-        videos = Video.objects.filter(section=section).order_by('order')  # ✅ section.video_set emas
-
+        videos = Video.objects.filter(section=section).order_by('order')
         for idx, video in enumerate(videos):
             if idx == 0:
-                continue  # birinchi video avtomatik ruxsat
+                continue
             previous_video = videos[idx - 1]
             if not VideoProgress.objects.filter(user=request.user, video=previous_video, is_completed=True).exists():
                 return Response({
@@ -456,14 +463,11 @@ class SectionOneViewSet(viewsets.ModelViewSet):
                     "required_video_title": previous_video.title
                 }, status=status.HTTP_403_FORBIDDEN)
 
-        # QuizSubmitSerializer bilan javoblarni tekshirish
         serializer = QuizSubmitSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         result = serializer.save(quiz)
 
-        # Agar quiz pass bo'lsa (60% yoki quiz.pass_percent)
         if result.percent >= quiz.pass_percent:
-            # SectionProgress update
             section_progress, _ = SectionProgress.objects.get_or_create(
                 user=request.user,
                 section=section
@@ -472,7 +476,6 @@ class SectionOneViewSet(viewsets.ModelViewSet):
             section_progress.completed_at = timezone.now()
             section_progress.save()
 
-            # Keyingi section ochish
             next_section = Section.objects.filter(
                 course=section.course,
                 order__gt=section.order
@@ -482,10 +485,9 @@ class SectionOneViewSet(viewsets.ModelViewSet):
                 next_section.is_blocked = False
                 next_section.save()
 
-                # Keyingi sectiondagi birinchi video ham ochilsin
                 first_video = Video.objects.filter(section=next_section).order_by('order').first()
                 if first_video:
-                    first_video.is_blocked = False  # ✅ is_accessible emas, is_blocked
+                    first_video.is_blocked = False
                     first_video.save()
 
         return Response({
@@ -918,6 +920,7 @@ class QuizViewSet(viewsets.ViewSet):
                 "finished_at": r.finished_at,
             })
         return Response(data)
+
 
     @action(detail=True, methods=['post'])
     def submit(self, request, pk=None):

@@ -535,18 +535,44 @@ class QuestionSerializer(serializers.ModelSerializer):
         ]
         return rep
 
+from django.db.models import Case, When, IntegerField
+from django.utils import timezone
+from main_video.models import QuizSession
 
 class QuizSerializer(serializers.ModelSerializer):
-    questions = QuestionSerializer(many=True, read_only=True)
+    questions = serializers.SerializerMethodField()
     is_accessible = serializers.SerializerMethodField()
     user_result = serializers.SerializerMethodField()
 
     class Meta:
-        model =     Quiz
+        model = Quiz
         fields = [
             'id', 'section', 'is_blocked', 'time_limit', 'pass_percent',
             'questions', 'is_accessible', 'user_result'
         ]
+
+    def get_questions(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return []
+
+        user = request.user
+
+        # ✅ user uchun session yaratib/olib, o‘sha session savollarini qaytaramiz
+        session = QuizSession.objects.get_or_create_active(user=user, quiz=obj)
+        ids = session.question_ids or []
+
+        if not ids:
+            return []
+
+        # ✅ random tartib saqlansin (ids tartibini DBda ham shunday order qilamiz)
+        order_case = Case(
+            *[When(id=pk, then=pos) for pos, pk in enumerate(ids)],
+            output_field=IntegerField()
+        )
+
+        qs = obj.questions.filter(id__in=ids).order_by(order_case)
+        return QuestionSerializer(qs, many=True).data
 
     def get_is_accessible(self, obj):
         user = self.context.get('request').user
@@ -580,7 +606,7 @@ class QuizSerializer(serializers.ModelSerializer):
 # =========================
 class QuizSubmitSerializer(serializers.Serializer):
     answers = serializers.ListField(
-        child=serializers.DictField(),  # {'question_id': 1, 'answer': '1'}
+        child=serializers.DictField(),
         allow_empty=False
     )
 
@@ -593,21 +619,49 @@ class QuizSubmitSerializer(serializers.Serializer):
         user = self.context.get('request').user
         answers = self.validated_data['answers']
 
-        total_questions = quiz.questions.count()
-        correct_answers = 0
+        # ✅ active sessionni olamiz (quizda userga yuborilgan random savollar)
+        session = QuizSession.objects.filter(user=user, quiz=quiz, is_submitted=False).order_by('-created_at').first()
+        if not session or not session.question_ids:
+            raise serializers.ValidationError("Quiz savollari topilmadi. Quizni qayta ochib kiring.")
 
+        question_ids = session.question_ids
+        total_questions = len(question_ids)
+
+        # ✅ answers -> dict (question_id => answer)
+        answers_map = {}
         for item in answers:
+            if 'question_id' not in item or 'answer' not in item:
+                raise serializers.ValidationError("Har bir javobda question_id va answer bo‘lishi kerak")
+
             try:
-                question = quiz.questions.get(id=item['question_id'])
-                if str(question.correct_answer) == str(item['answer']):
-                    correct_answers += 1
-            except Question.DoesNotExist:
-                continue
+                qid = int(item['question_id'])
+            except (TypeError, ValueError):
+                raise serializers.ValidationError("question_id noto‘g‘ri")
+
+            if qid in answers_map:
+                raise serializers.ValidationError("Bir savolga 2 marta javob yuborilgan")
+
+            answers_map[qid] = str(item['answer'])
+
+        # ✅ Faqat sessiondagi savollar qabul qilinadi (cheat bo‘lmasin)
+        extra_ids = [qid for qid in answers_map.keys() if qid not in question_ids]
+        if extra_ids:
+            raise serializers.ValidationError("Yuborilgan javoblar orasida sessionga kirmaydigan savollar bor")
+
+        # ✅ Correct answerlarni bitta query bilan olamiz
+        qs = quiz.questions.filter(id__in=question_ids).values_list('id', 'correct_answer')
+        correct_map = {qid: str(ca) for qid, ca in qs}
+
+        correct_answers = 0
+        for qid in question_ids:
+            user_answer = answers_map.get(qid)  # javob bermagan bo‘lsa None -> noto‘g‘ri hisoblanadi
+            if user_answer is not None and correct_map.get(qid) == str(user_answer):
+                correct_answers += 1
 
         percent = (correct_answers / total_questions) * 100 if total_questions else 0
         is_passed = percent >= quiz.pass_percent
+        now = timezone.now()
 
-        # Quiz natijasini saqlash yoki update
         result, created = QuizResult.objects.update_or_create(
             user=user,
             quiz=quiz,
@@ -616,16 +670,22 @@ class QuizSubmitSerializer(serializers.Serializer):
                 'correct_answers': correct_answers,
                 'percent': percent,
                 'is_passed': is_passed,
-                'finished_at': timezone.now(),
+                'started_at': session.created_at,
+                'finished_at': now,
             }
         )
 
-        # Agar quiz o'tilgan bo'lsa, section progress va keyingi section
+        # ✅ sessionni yopamiz (keyingi urinishda yangi random savollar beriladi)
+        session.is_submitted = True
+        session.submitted_at = now
+        session.save(update_fields=['is_submitted', 'submitted_at'])
+
+        # ✅ PASS bo‘lsa section ochish (sizdagi eski logika)
         if is_passed:
             section = quiz.section
             section_progress, _ = SectionProgress.objects.get_or_create(user=user, section=section)
             section_progress.is_completed = True
-            section_progress.completed_at = timezone.now()
+            section_progress.completed_at = now
             section_progress.save()
 
             next_section = Section.objects.filter(course=section.course, order__gt=section.order).order_by('order').first()

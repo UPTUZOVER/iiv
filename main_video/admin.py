@@ -191,7 +191,7 @@ class GroupAdmin(admin.ModelAdmin):
 # ----------------------------
 @admin.register(Quiz)
 class QuizAdmin(admin.ModelAdmin):
-    list_display = ("id",'section', 'is_blocked', 'pass_percent', 'time_limit')
+    list_display = ('id', 'section', 'questions_count', 'pass_percent', 'time_limit', 'is_blocked')
     list_filter = ('is_blocked', 'section__course')
     search_fields = ('section__title',)
     inlines = [QuestionInline, QuizResultInline]

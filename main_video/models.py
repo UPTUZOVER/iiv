@@ -204,23 +204,74 @@ class Comment(models.Model):
         return f"{self.user.hemis_id} - {self.comment}"
 
 
-# =========================
-# QUIZ MODELLARI
-# =========================
 class Quiz(models.Model):
-    section = models.OneToOneField(Section, related_name='quiz',on_delete=models.SET_NULL,null=True,blank=True)
+    section = models.OneToOneField(Section, related_name='quiz', on_delete=models.SET_NULL, null=True, blank=True)
     is_blocked = models.BooleanField(default=True)
     pass_percent = models.PositiveSmallIntegerField(default=60)
     time_limit = models.PositiveIntegerField(default=20)
+
+    # ✅ ADMIN BELGILAYDI: frontendga nechta savol yuborilsin
+    questions_count = models.PositiveIntegerField(default=10)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return f"Quiz - {self.section.title}"
-    def delete(self, *args, **kwargs):
-        from django.core.exceptions import ValidationError
 
-        raise ValidationError("Bu quizni o‘chirish mumkin emas. Quiz sectionga biriktirilgan.")
+import random
+from django.db import transaction
+from django.utils import timezone
+
+class QuizSessionManager(models.Manager):
+    def get_active(self, user, quiz):
+        return self.filter(user=user, quiz=quiz, is_submitted=False).order_by('-created_at').first()
+
+    def get_or_create_active(self, user, quiz):
+        session = self.get_active(user, quiz)
+
+        # Quizdagi jami savollar
+        all_ids = list(quiz.questions.values_list('id', flat=True))
+        k = min(int(quiz.questions_count or 0), len(all_ids))
+
+        if session:
+            # Agar admin questions_count ni o‘zgartirgan bo‘lsa yoki savollar o‘chgani bo‘lsa — yangilaymiz
+            valid_ids = [qid for qid in session.question_ids if qid in all_ids]
+            if len(valid_ids) != k:
+                session.question_ids = random.sample(all_ids, k) if k else []
+                session.save(update_fields=['question_ids', 'updated_at'])
+            else:
+                # hammasi joyida
+                session.question_ids = valid_ids
+                session.save(update_fields=['question_ids', 'updated_at'])
+            return session
+
+        # Session yo‘q bo‘lsa — yaratamiz
+        selected = random.sample(all_ids, k) if k else []
+        return self.create(user=user, quiz=quiz, question_ids=selected)
+
+
+class QuizSession(models.Model):
+    user = models.ForeignKey(Users, on_delete=models.CASCADE, related_name='quiz_sessions')
+    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='sessions')
+    question_ids = models.JSONField(default=list)  # [1,5,9,...]
+    is_submitted = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+
+    objects = QuizSessionManager()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'quiz', 'is_submitted', 'created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.hemis_id} | quiz={self.quiz_id} | submitted={self.is_submitted}"
+
+
 
 class Question(models.Model):
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='questions')
