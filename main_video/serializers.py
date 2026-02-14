@@ -600,10 +600,6 @@ class QuizSerializer(serializers.ModelSerializer):
         except QuizResult.DoesNotExist:
             return None
 
-
-# =========================
-# Quiz Submit Serializer
-# =========================
 class QuizSubmitSerializer(serializers.Serializer):
     answers = serializers.ListField(
         child=serializers.DictField(),
@@ -696,12 +692,6 @@ class QuizSubmitSerializer(serializers.Serializer):
         return result
 
 
-# =========================
-# Section Serializer
-
-# =========================
-# Section serializer
-# =========================
 class SectionOneSerializer(serializers.ModelSerializer):
     videos = VideosSerializer(source='video_set', many=True, read_only=True)
     quiz = serializers.SerializerMethodField()

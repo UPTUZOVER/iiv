@@ -180,11 +180,7 @@ class CategoryAdmin(admin.ModelAdmin):
 
 # ----------------------------
 # Group admin
-# ----------------------------
-@admin.register(Group)
-class GroupAdmin(admin.ModelAdmin):
-    list_display = ('name',)
-    search_fields = ('name',)
+
 
 # ----------------------------
 # Quiz admin with inline Questions & QuizResults
