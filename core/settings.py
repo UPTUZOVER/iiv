@@ -40,7 +40,6 @@ INSTALLED_APPS = [
     'drf_yasg',       # Swagger
     'corsheaders',    # CORS
     'django_filters',
-
     # My apps
     'main_video',
     'test_talim',

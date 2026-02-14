@@ -104,19 +104,26 @@ from rest_framework import viewsets
 class CategoryMainViewSet(viewsets.ModelViewSet):
     queryset = Category.objects.all()
     serializer_class =CategoryMainSerializer
+
+
+
 import django_filters
+from django.db.models import Q
 from .models import Course
 
-
 class CourseFilter(django_filters.FilterSet):
-    category = django_filters.NumberFilter(field_name='category_id')
-    teacher = django_filters.NumberFilter(field_name='teacher__id')
-    is_blocked = django_filters.BooleanFilter()
+
+    teacher_name = django_filters.CharFilter(method="filter_teacher_name")
 
     class Meta:
         model = Course
-        fields = ['category', 'teacher', 'is_blocked']
+        fields = ["category", "is_blocked"]
 
+    def filter_teacher_name(self, queryset, name, value):
+        return queryset.filter(
+            Q(teacher__first_name__icontains=value) |
+            Q(teacher__last_name__icontains=value)
+        ).distinct()
 
 
 class CourseMainViewSet(viewsets.ModelViewSet):
@@ -130,12 +137,14 @@ class CourseMainViewSet(viewsets.ModelViewSet):
     ]
 
     filterset_class = CourseFilter
-
     search_fields = [
         'title',
         'small_description',
         'author',
+        'teacher__first_name',
+        'teacher__last_name',
         'teacher__username',
+        '=teacher__hemis_id',  # mana shu MUHIM
     ]
 
     ordering_fields = ['created_at', 'title']

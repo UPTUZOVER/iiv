@@ -219,36 +219,52 @@ class CategoryMainSerializer(serializers.ModelSerializer):
 
 class CourseMainSerializer(serializers.ModelSerializer):
     average_rating = serializers.SerializerMethodField()
-    has_certificate = serializers.SerializerMethodField()  # 🆕 QO‘SHILDI
+    has_certificate = serializers.SerializerMethodField()
+    teachers = serializers.SerializerMethodField()  # 🆕 qo‘shildi
 
     class Meta:
         model = Course
         fields = [
-            "id","title", "category", "img", "author", "video",
-            "is_blocked", "small_description", "created_at",
-            "updated_at", "average_rating","has_certificate"
+            "id",
+            "title",
+            "category",
+            "img",
+            "teachers",  # 🆕 shu yerda
+            "author",
+            "video",
+            "is_blocked",
+            "small_description",
+            "created_at",
+            "updated_at",
+            "average_rating",
+            "has_certificate"
+        ]
+
+    def get_teachers(self, obj):
+        return [
+            {
+                "first_name": teacher.first_name,
+                "last_name": teacher.last_name
+            }
+            for teacher in obj.teacher.all()
         ]
 
     def get_average_rating(self, obj):
-        """Kursning umumiy o'rtacha ratingi"""
-        # Videolarni olish
         videos = Video.objects.filter(section__course=obj)
-
         if not videos.exists():
             return 0
 
-        # Barcha ratinglarni yig'ish
         all_ratings = []
         for video in videos:
-            ratings = VideoRating.objects.filter(video=video).values_list('rating', flat=True)
+            ratings = VideoRating.objects.filter(
+                video=video
+            ).values_list('rating', flat=True)
             all_ratings.extend(ratings)
 
         if not all_ratings:
             return 0
 
-        average = sum(all_ratings) / len(all_ratings)
-        return round(average, 2)
-
+        return round(sum(all_ratings) / len(all_ratings), 2)
 
     def get_has_certificate(self, obj):
         request = self.context.get('request')

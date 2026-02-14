@@ -21,7 +21,7 @@ class Users(AbstractUser):
     first_name = models.CharField(max_length=255,null=True, blank=True)
     last_name = models.CharField(max_length=255,null=True, blank=True)
     third_name = models.CharField(max_length=255,null=True, blank=True)
-    imgage = models.ImageField(null=True, blank=True)
+    imgage = models.URLField(max_length=500, null=True, blank=True)
     kurs = models.CharField(max_length=30,null=True, blank=True)
     avg_mark = models.DecimalField(max_digits=5, decimal_places=2, default=0,null=True, blank=True)
     ROLE_CHOICES = [
@@ -35,7 +35,7 @@ class Users(AbstractUser):
     REQUIRED_FIELDS = ['username']
 
     def __str__(self):
-        return f"{self.hemis_id} ({self.role})"
+        return f"{self.first_name} {self.last_name} ({self.role})"
 
 
 # =========================
